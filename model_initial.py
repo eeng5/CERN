@@ -171,8 +171,8 @@ anti_pred = antitau_model.predict(
     antitau_features_test
 )
 
-tau_model.save('tau_model.hdf5')
-antitau_model.save('antitau_model.hdf5')
+tau_model.save('tau_model_initial.hdf5')
+antitau_model.save('antitau_model_initial.hdf5')
 
 print(pred)
 print(anti_pred)

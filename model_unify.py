@@ -1,6 +1,7 @@
 import tensorflow as tf
 import numpy as np
 from array import array
+import random
 
 tau_features = np.loadtxt('tau_data/15GeV/15gev_tau_features.csv', delimiter=',')
 tau_labels = np.loadtxt('tau_data/15GeV/15gev_tau_labels.csv', delimiter=',')
@@ -29,8 +30,6 @@ for i in range(len(antitau_features)):
 antitau_features = tf.gather(antitau_features, anti_indices)
 antitau_labels = tf.gather(antitau_labels, anti_indices)
 
-#Normalize angles but only features
-
 tau_features_train = tau_features[0: int(0.9 * tau_features.shape[0]), :]
 tau_features_test = tau_features[int(0.9 * tau_features.shape[0]):, :]
 tau_labels_train = tau_labels[0: int(0.9 * tau_labels.shape[0]), :]
@@ -41,13 +40,44 @@ antitau_features_test = antitau_features[int(0.9 * antitau_features.shape[0]):, 
 antitau_labels_train = antitau_labels[0: int(0.9 * antitau_labels.shape[0]), :]
 antitau_labels_test = antitau_labels[int(0.9 * antitau_labels.shape[0]):, :]
 
-#Original model loss with 150 epochs and with 1000 layers: 0.0441, 4.4518
-#Original model loss with 150 epochs and without 1000 layers:
-#Best Tanh loss for 150 epochs: 0.0248, 3.0860
-#Normalized P_t loss for 150 epochs: 0.0460, 0.0224
-#Normalized angle loss for 150 epochs: 3.3711019, 1.2779119
-#Unifying tau and anittau loss: loss for 150 epochs: 0.2024
-#Custom Loss 150 epochs:
+#Add identifier feature, concatenate, shuffle. 1 = tau, 0 = anti
+tau_identifier_features_train = np.ones((len(tau_features_train), 1))
+tau_identifier_features_test = np.ones((len(tau_features_test), 1))
+antitau_identifier_features_train = np.zeros((len(antitau_features_train), 1))
+antitau_identifier_features_test = np.zeros((len(antitau_features_test), 1))
+
+tau_identifier_labels_train = np.ones((len(tau_labels_train), 1))
+tau_identifier_labels_test = np.ones((len(tau_labels_test), 1))
+antitau_identifier_labels_train = np.zeros((len(antitau_labels_train), 1))
+antitau_identifier_labels_test = np.zeros((len(antitau_labels_test), 1))
+
+tau_features_train = np.append(tau_features_train, tau_identifier_features_train, axis=1)
+tau_features_test = np.append(tau_features_test, tau_identifier_features_test, axis=1)
+antitau_features_train = np.append(antitau_features_train, antitau_identifier_features_train, axis=1)
+antitau_features_test = np.append(antitau_features_test, antitau_identifier_features_test, axis=1)
+
+tau_labels_train = np.append(tau_labels_train, tau_identifier_labels_train, axis=1)
+tau_labels_test = np.append(tau_labels_test, tau_identifier_labels_test, axis=1)
+antitau_labels_train = np.append(antitau_labels_train, antitau_identifier_labels_train, axis=1)
+antitau_labels_test = np.append(antitau_labels_test, antitau_identifier_labels_test, axis=1)
+
+combined_features_train = np.concatenate((tau_features_train, antitau_features_train), axis=0)
+combined_features_test = np.concatenate((tau_features_test, antitau_features_test), axis=0)
+combined_labels_train = np.concatenate((tau_labels_train, antitau_labels_train), axis=0)
+combined_labels_test = np.concatenate((tau_labels_test, antitau_labels_test), axis=0)
+
+combined_features_labels_train = list(zip(combined_features_train, combined_labels_train))
+random.shuffle(combined_features_labels_train)
+combined_features_train, combined_labels_train = zip(*combined_features_labels_train)
+combined_features_train = np.array(combined_features_train)
+combined_labels_train = np.array(combined_labels_train)
+
+combined_features_labels_test = list(zip(combined_features_test, combined_labels_test))
+random.shuffle(combined_features_labels_test)
+combined_features_test, combined_labels_test = zip(*combined_features_labels_test)
+combined_features_test = np.array(combined_features_test)
+combined_labels_test = np.array(combined_labels_test)
+
 def create_model():
     model = tf.keras.Sequential()
     model.add(tf.keras.layers.Dense(640, activation=tf.keras.activations.relu))
@@ -56,16 +86,16 @@ def create_model():
     model.add(tf.keras.layers.Dropout(0.2))
     model.add(tf.keras.layers.Dense(320, activation=tf.keras.activations.relu))
     model.add(tf.keras.layers.Dropout(0.1))
-    model.add(tf.keras.layers.Dense(160, activation=tf.keras.activations.tanh))
+    model.add(tf.keras.layers.Dense(160, activation=tf.keras.activations.relu))
     model.add(tf.keras.layers.Dropout(0.1))
     model.add(tf.keras.layers.Dense(128, activation=tf.keras.activations.relu))
     model.add(tf.keras.layers.Dropout(0.1))
     model.add(tf.keras.layers.Dense(64, activation=tf.keras.activations.relu))
     model.add(tf.keras.layers.Dropout(0.1))
-    model.add(tf.keras.layers.Dense(32, activation=tf.keras.activations.tanh))
+    model.add(tf.keras.layers.Dense(32, activation=tf.keras.activations.relu))
     model.add(tf.keras.layers.Dropout(0.05))
     model.add(tf.keras.layers.Dense(8, activation=tf.keras.activations.relu))
-    model.add(tf.keras.layers.Dense(3))
+    model.add(tf.keras.layers.Dense(4))
 
     model.compile(
         optimizer=tf.keras.optimizers.Adam(lr=0.001, decay=0.0001),
@@ -74,52 +104,27 @@ def create_model():
     return model
 
 
-tau_model = create_model()
-antitau_model = create_model()
+model = create_model()
 
-tau_model.fit(
-    tau_features_train,
-    tau_labels_train,
+model.fit(
+    combined_features_train,
+    combined_labels_train,
     batch_size=20,
     epochs=150,
-    validation_data=(tau_features_test, tau_labels_test)
-    # validation_data=None
+    validation_data=(combined_features_test, combined_labels_test)
 )
-tau_model.evaluate(
-    tau_features_test,
-    tau_labels_test,
-    batch_size=10
-)
-antitau_model.fit(
-    antitau_features_train,
-    antitau_labels_train,
-    batch_size=20,
-    epochs=150,
-
-    validation_data=(antitau_features_test, antitau_labels_test)
-    # validation_data = None
-)
-antitau_model.evaluate(
-    antitau_features_test,
-    antitau_labels_test,
+model.evaluate(
+    combined_features_test,
+    combined_labels_test,
     batch_size=10
 )
 
-pred = tau_model.predict(
-    tau_features_test
+
+pred = model.predict(
+    combined_features_test
 )
 
-anti_pred = antitau_model.predict(
-    antitau_features_test
-)
-
-np.savetxt('tau_activation_pions.csv', tau_features_test, delimiter=',')
-np.savetxt('antitau_activation_pions.csv', antitau_features_test, delimiter = ',')
-np.savetxt('tau_model_activation.csv', np.array(pred), delimiter=',')
-np.savetxt('antitau_model_activation.csv', np.array(anti_pred), delimiter=',')
-
-# tau_model.save('tau_model_activation.hdf5')
-# antitau_model.save('antitau_model_activation.hdf5')
+np.savetxt('model_unify.csv', np.array(pred), delimiter=',')
+np.savetxt('unify_pions.csv', combined_features_test, delimiter=',')
 
 print(pred)
-print(anti_pred)
